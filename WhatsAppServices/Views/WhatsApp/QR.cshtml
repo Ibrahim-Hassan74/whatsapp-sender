@@ -1,0 +1,18 @@
+﻿@model string
+
+<h2>Scan QR</h2>
+
+@if (!string.IsNullOrEmpty(Model))
+{
+    <img src="@Model" width="300" />
+}
+else
+{
+    <p>QR not ready...</p>
+}
+
+<script>
+    setInterval(() => {
+        location.reload();
+    }, 5000);
+</script>

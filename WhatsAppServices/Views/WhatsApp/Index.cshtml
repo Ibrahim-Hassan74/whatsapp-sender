@@ -1,0 +1,175 @@
+﻿<div class="container mt-5">
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card text-center shadow-sm">
+                <div class="card-header bg-primary text-white">حالة الاتصال</div>
+                <div class="card-body">
+                    <div id="status-area" class="mb-3">
+                        <span id="status-badge" class="badge bg-secondary p-2">جاري فحص الحالة...</span>
+                        <button id="btnLogout" class="btn btn-sm btn-danger ms-2" style="display:none;" onclick="logout()">تسجيل الخروج</button>
+                    </div>
+    
+                    <div id="qr-container" class="mt-4" style="display:none;">
+                        <h5 class="text-muted">امسح الكود لربط الحساب:</h5>
+                        <div id="qrcode" class="d-flex justify-content-center border p-3 bg-white shadow-sm"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="status-area">
+                <button id="btnLogout" class="btn btn-sm btn-danger ms-2" style="display:none;" onclick="logout()">تسجيل الخروج</button>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-success text-white">إرسال رسالة جديدة</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">رقم الهاتف (بالصيغة الدولية مثلاً 2010...)</label>
+                        <input type="text" id="phoneNumber" class="form-control" placeholder="201012345678">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الرسالة</label>
+                        <textarea id="messageText" class="form-control" rows="4" placeholder="اكتب رسالتك هنا..."></textarea>
+                    </div>
+                    <button id="btnSend" class="btn btn-success w-100" onclick="sendMessage()">إرسال الآن</button>
+                    <div id="sendResult" class="mt-2"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <script>
+        // تعريف العناصر مرة واحدة فقط لتجنب الأخطاء
+        const badge = document.getElementById("status-badge");
+        const qrDiv = document.getElementById("qrcode");
+        const qrContainer = document.getElementById("qr-container");
+        const logoutBtn = document.getElementById("btnLogout");
+
+        // إعداد SignalR (مرة واحدة فقط)
+        const connection = new signalR.HubConnectionBuilder()
+        .withUrl("/waHub")
+        .withAutomaticReconnect()
+        .build();
+
+        // وظيفة تحديث الواجهة الموحدة
+        function updateUI(isConnected, qrCode = null) {
+        if (isConnected) {
+        badge.className = "badge bg-success p-2";
+        badge.innerText = "متصل ✅";
+        qrContainer.style.display = "none";
+        logoutBtn.style.display = "inline-block";
+        } else {
+        badge.className = "badge bg-warning text-dark p-2";
+        badge.innerText = "مطلوب مسح الـ QR";
+        qrContainer.style.display = "block";
+        logoutBtn.style.display = "none";
+                
+        if (qrCode) {
+        qrDiv.innerHTML = "";
+        new QRCode(qrDiv, qrCode);
+        }
+        }
+        }
+
+        // استقبال التحديثات من SignalR
+        connection.on("UpdateWhatsApp", function (qrCode, isReady) {
+        console.log("SignalR Update:", isReady);
+        updateUI(isReady, qrCode);
+        });
+
+        // دالة فحص الحالة عند التحميل (Initial Check)
+        async function checkInitialStatus() {
+        try {
+        const response = await fetch('/WhatsApp/GetCurrentStatus');
+        const data = await response.json();
+        console.log("Initial Status:", data.connected);
+        updateUI(data.connected);
+        } catch (e) {
+        badge.innerText = "تعذر فحص الحالة";
+        console.error(e);
+        }
+        }
+
+        // بدء الاتصال ثم فحص الحالة
+        connection.start()
+        .then(() => {
+        console.log("SignalR Connected");
+        checkInitialStatus();
+        })
+        .catch(err => console.error("SignalR Connection Error: ", err));
+
+        // وظيفة إرسال الرسالة
+        async function sendMessage() {
+        const number = document.getElementById("phoneNumber").value;
+        const message = document.getElementById("messageText").value;
+        const btn = document.getElementById("btnSend");
+        const resultDiv = document.getElementById("sendResult");
+
+        if (!number || !message) {
+        alert("برجاء إدخال الرقم والرسالة");
+        return;
+        }
+
+        btn.disabled = true;
+        btn.innerText = "جاري الإرسال...";
+
+        try {
+        const response = await fetch('/WhatsApp/SendMessage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `number=${number}&message=${encodeURIComponent(message)}`
+        });
+
+        const data = await response.json();
+        if (data.success) {
+        resultDiv.innerHTML = '<div class="alert alert-success">تم الإرسال بنجاح!</div>';
+        document.getElementById("messageText").value = "";
+        } else {
+        resultDiv.innerHTML = '<div class="alert alert-danger">فشل الإرسال: ' + data.error + '</div>';
+        }
+        } catch (err) {
+        resultDiv.innerHTML = '<div class="alert alert-danger">خطأ في الاتصال</div>';
+        } finally {
+        btn.disabled = false;
+        btn.innerText = "إرسال الآن";
+        }
+        }
+
+        // وظيفة تسجيل الخروج
+        // استبدل دالة الـ logout في الـ Scripts عندك بهذا الكود
+        async function logout() {
+        if (!confirm("هل أنت متأكد من تسجيل الخروج؟")) return;
+
+        logoutBtn.disabled = true;
+        badge.innerText = "جاري تسجيل الخروج...";
+        badge.className = "badge bg-info p-2";
+
+        try {
+        const response = await fetch('/WhatsApp/Logout', { method: 'POST' });
+        if (response.ok) {
+        // تصغير الواجهة فوراً بانتظار الـ QR الجديد من SignalR
+        qrDiv.innerHTML = "";
+        logoutBtn.style.display = "none";
+        badge.innerText = "جاري طلب رمز جديد...";
+        badge.className = "badge bg-warning text-dark p-2";
+        qrContainer.style.display = "block";
+        } else {
+        throw new Error("Logout failed");
+        }
+        } catch (e) {
+        alert("فشل تسجيل الخروج");
+        logoutBtn.disabled = false;
+        // ارجاع الحالة لمتصل لأن العملية فشلت
+        updateUI(true);
+        }
+        }
+        
+        
+    </script>
+}
